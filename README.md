@@ -16,10 +16,12 @@
 
 ---
 
-## 📸 Screenshot
+## 📸 Live Dashboard
 
 <div align="center">
-<img src="https://via.placeholder.com/800x500/667eea/ffffff?text=AzNetMon+Dashboard" alt="AzNetMon Dashboard" width="100%">
+<img src="assets/dashboard-screenshot.png" alt="AzNetMon Dashboard - Real-time ICMP Network Monitoring showing live ping results, response times, and network status" width="100%">
+
+*Real-time network monitoring with beautiful, responsive UI showing ping statistics and network health*
 </div>
 
 ## ✨ Features

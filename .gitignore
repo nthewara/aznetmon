@@ -34,3 +34,7 @@ Thumbs.db
 # Environment files
 .env
 .env.local
+
+# Keep assets directory but ignore temporary files
+assets/*.tmp
+assets/*.temp
