@@ -68,7 +68,34 @@ By participating in this project, you agree to abide by our Code of Conduct. Ple
   - github.com/cosmtrek/air (live reload)
   - github.com/securecodewarrior/gosec/v2 (security scanner)
 
-### Local Development
+### Development Environment
+
+#### Option 1: Using Dev Container (Recommended)
+The easiest way to get started is using Visual Studio Code with the Dev Container extension.
+
+1. Install [Visual Studio Code](https://code.visualstudio.com/)
+2. Install the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+3. Clone the repository:
+   ```bash
+   git clone https://github.com/nthewara/aznetmon.git
+   cd aznetmon
+   ```
+4. Open the project in VS Code:
+   ```bash
+   code .
+   ```
+5. When prompted, click "Reopen in Container" or run the "Dev Containers: Reopen in Container" command from the Command Palette (F1)
+6. VS Code will build the dev container and open the project inside it with all required tools pre-installed
+
+The Dev Container includes:
+- Go 1.24 with all required tools
+- Air for hot reloading
+- All necessary permissions for ICMP monitoring
+- Debugging support
+
+#### Option 2: Local Setup
+If you prefer to develop without using a Dev Container:
+
 ```bash
 # Clone your fork
 git clone https://github.com/nthewara/aznetmon.git
