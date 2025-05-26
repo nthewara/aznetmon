@@ -1,0 +1,133 @@
+name: Create Issue on Workflow Failure
+
+on:
+  workflow_run:
+    workflows: ["CI/CD Pipeline", "Security Scan"]
+    types:
+      - completed
+
+jobs:
+  create-issue:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    permissions:
+      issues: write
+      actions: read
+    steps:
+      - name: Get workflow run information
+        uses: actions/github-script@v7
+        id: workflow-info
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const owner = run.repository.owner.login;
+            const repo = run.repository.name;
+            
+            // Format date for issue title
+            const date = new Date(run.created_at).toISOString().split('T')[0];
+            
+            // Get workflow name and URL
+            const workflowName = run.name;
+            const workflowURL = run.html_url;
+            
+            // Get commit information
+            const headCommit = run.head_commit;
+            const commitMessage = headCommit ? headCommit.message : 'No commit message available';
+            const commitId = headCommit ? headCommit.id.substring(0, 7) : 'Unknown';
+            const commitURL = headCommit ? headCommit.url : '#';
+            
+            // Get branch information
+            const branch = run.head_branch;
+            
+            return {
+              owner,
+              repo,
+              date,
+              workflowName,
+              workflowURL,
+              commitMessage,
+              commitId,
+              commitURL,
+              branch
+            };
+
+      - name: Download workflow logs
+        uses: actions/github-script@v7
+        id: logs
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const owner = run.repository.owner.login;
+            const repo = run.repository.name;
+            const run_id = run.id;
+            
+            // Get logs URL for the workflow run
+            const logsUrl = `GET /repos/${owner}/${repo}/actions/runs/${run_id}/logs`;
+            
+            try {
+              // GitHub API will return a redirect URL for logs
+              const response = await github.request(logsUrl, {
+                headers: {
+                  accept: 'application/vnd.github+json'
+                }
+              });
+              
+              console.log('Logs available at: ' + response.url);
+              
+              // Due to limitations, we can't easily extract the full logs here
+              // We'll include a link to the logs in the GitHub UI instead
+              return {
+                logsURL: run.html_url
+              };
+            } catch (error) {
+              console.error('Error fetching logs:', error);
+              return {
+                logsURL: run.html_url,
+                error: error.message
+              };
+            }
+
+      - name: Create issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const info = ${{ steps.workflow-info.outputs.result }};
+            const logs = ${{ steps.logs.outputs.result }};
+            
+            const title = `🔴 Workflow Failure: ${info.workflowName} [${info.date}]`;
+            
+            const body = `## Workflow Failure Report
+            
+            The **${info.workflowName}** workflow has failed.
+            
+            ### Failure Details
+            
+            - **Workflow:** [${info.workflowName}](${info.workflowURL})
+            - **Branch:** \`${info.branch}\`
+            - **Commit:** [${info.commitId}](${info.commitURL}) - ${info.commitMessage}
+            - **Date/Time:** ${new Date(context.payload.workflow_run.created_at).toUTCString()}
+            
+            ### Logs and Details
+            
+            You can view the complete logs and details of the failure here:
+            - [View Workflow Run](${logs.logsURL})
+            
+            ### Additional Information
+            
+            This issue was automatically created by the GitHub Actions workflow.
+            Please investigate the failure and resolve the issue.
+            
+            cc/ @${context.payload.workflow_run.actor.login}
+            `;
+            
+            // Create GitHub issue
+            const issue = await github.rest.issues.create({
+              owner: info.owner,
+              repo: info.repo,
+              title: title,
+              body: body,
+              labels: ['bug', 'automation', 'workflow-failure']
+            });
+            
+            console.log(`Issue created: ${issue.data.html_url}`);
