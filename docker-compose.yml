@@ -9,9 +9,13 @@ services:
       # You can modify these targets or override with docker-compose up
       - ICMP_TARGETS=8.8.8.8,1.1.1.1,9.9.9.9,cloudflare.com,google.com
     restart: unless-stopped
-    # Required for ICMP operations
+    # Required capabilities for ICMP operations
     cap_add:
       - NET_RAW
+      - NET_ADMIN
+    # Security context
+    security_opt:
+      - no-new-privileges:true
     networks:
       - aznetmon
 
