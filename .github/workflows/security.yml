@@ -1,14 +1,12 @@
 name: Security Scan
 
-# GitHub Actions temporarily disabled - workflows can be run manually
 on:
-  workflow_dispatch:
-  # push:
-  #   branches: [ main ]
-  # pull_request:
-  #   branches: [ main ]
-  # schedule:
-  #   - cron: '0 6 * * 1'  # Weekly on Mondays
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Mondays
 
 jobs:
   govulncheck:
