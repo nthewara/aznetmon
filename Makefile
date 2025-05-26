@@ -84,19 +84,19 @@ test:
 dev:
 	@if ! command -v air > /dev/null; then \
 		echo "Installing air for live reload..."; \
-		go install github.com/cosmtrek/air@latest; \
+		go install github.com/air-verse/air@latest; \
 	fi
 	air
 
 # Install air for development
 install-dev-tools:
-	go install github.com/cosmtrek/air@latest
+	go install github.com/air-verse/air@latest
 
 # Check for security vulnerabilities
 security:
 	@if ! command -v gosec > /dev/null; then \
 		echo "Installing gosec..."; \
-		go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest; \
+		go install github.com/cosmos/gosec/v2/cmd/gosec@latest; \
 	fi
 	gosec ./...
 
@@ -109,9 +109,9 @@ fmt:
 dev-setup: install-dev-tools
 	@echo "Setting up development environment..."
 	@echo "Installing air for hot reload..."
-	go install github.com/cosmtrek/air@latest
+	go install github.com/air-verse/air@latest
 	@echo "Installing gosec for security scanning..."
-	go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+	go install github.com/cosmos/gosec/v2/cmd/gosec@latest
 	@echo "Installing golangci-lint..."
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@echo "Installing delve debugger..."

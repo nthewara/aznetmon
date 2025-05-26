@@ -24,8 +24,8 @@ RUN groupadd --gid $USER_GID $USERNAME \
 RUN mkdir -p /workspace && chown $USER_UID:$USER_GID /workspace
 
 # Install Go development tools
-RUN go install github.com/cosmtrek/air@latest && \
-    go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest && \
+RUN go install github.com/air-verse/air@latest && \
+    go install github.com/cosmos/gosec/v2/cmd/gosec@latest && \
     go install golang.org/x/tools/gopls@latest && \
     go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest && \
     go install github.com/go-delve/delve/cmd/dlv@latest

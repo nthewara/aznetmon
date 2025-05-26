@@ -65,8 +65,8 @@ By participating in this project, you agree to abide by our Code of Conduct. Ple
 - github.com/gorilla/websocket v1.5.3
 - golang.org/x/net v0.40.0
 - Development tools:
-  - github.com/cosmtrek/air (live reload)
-  - github.com/securecodewarrior/gosec/v2 (security scanner)
+  - github.com/air-verse/air (live reload)
+  - github.com/cosmos/gosec/v2 (security scanner)
 
 ### Development Environment
 
