@@ -57,9 +57,16 @@ By participating in this project, you agree to abide by our Code of Conduct. Ple
 ## Development Setup
 
 ### Prerequisites
-- Go 1.21 or higher
+- Go 1.24 or higher
 - Docker (for container testing)
 - Git
+
+### Dependencies
+- github.com/gorilla/websocket v1.5.3
+- golang.org/x/net v0.40.0
+- Development tools:
+  - github.com/cosmtrek/air (live reload)
+  - github.com/securecodewarrior/gosec/v2 (security scanner)
 
 ### Local Development
 ```bash

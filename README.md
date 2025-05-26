@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)
+![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![Size](https://img.shields.io/badge/Size-~47MB-orange?style=for-the-badge)
@@ -49,7 +49,7 @@ Then open http://localhost:8080 in your browser! 🎉
 
 ### Local Development
 
-1. **Prerequisites**: Go 1.21+ installed
+1. **Prerequisites**: Go 1.24+ installed
 
 2. **Clone and run**:
    ```bash
@@ -199,7 +199,7 @@ AzNetMon requires `NET_RAW` capability to send ICMP packets:
 - **Memory**: ~5-10MB runtime
 - **CPU**: Minimal usage (~0.1% on modern systems)
 - **Network**: Outbound ICMP traffic
-- **Go Version**: 1.21+ (for building from source)
+- **Go Version**: 1.24+ (for building from source)
 
 ## 🔧 Troubleshooting
 
@@ -251,6 +251,7 @@ If experiencing high CPU usage:
 - **WebSocket Support**: Required for real-time updates
 - **JavaScript**: Must be enabled
 
+<<<<<<< HEAD
 ### Performance Tips
 - **Optimal Targets**: 5-20 hosts for best performance
 - **Network**: Ensure stable internet connection
@@ -258,6 +259,106 @@ If experiencing high CPU usage:
 - **Monitoring**: Use browser developer tools to check WebSocket connections
 ````markdown
 # 🌐 AzNetMon - Lightning Fast ICMP Network Monitor
+=======
+**Docker Container Won't Start**
+```bash
+# Ensure NET_RAW capability is added
+docker run --cap-add=NET_RAW -p 8080:8080 aznetmon
+
+# Check logs
+docker logs aznetmon
+```
+
+**WebSocket Connection Issues**
+- Check firewall settings
+- Ensure port is accessible
+- Verify no proxy is blocking WebSocket connections
+
+## 📦 Available Commands
+
+Use the included Makefile for common tasks:
+
+```bash
+make help          # Show all available commands
+make build         # Build the binary
+make run           # Run locally with default targets
+make docker-build  # Build Docker image
+make docker-run    # Run Docker container
+make compose-up    # Start with docker-compose
+make clean         # Clean build artifacts
+make test          # Run tests
+```
+
+## 🔍 Performance Metrics
+
+| Metric | Value | Notes |
+|--------|--------|-------|
+| **Binary Size** | ~8MB | Single static binary |
+| **Docker Image** | ~47MB | Alpine Linux based |
+| **Memory Usage** | 5-10MB | Runtime memory footprint |
+| **CPU Usage** | <0.1% | On modern hardware |
+| **Startup Time** | <1 second | Ready to serve immediately |
+| **Response Time** | <10ms | Dashboard load time |
+
+## 🤝 Contributing
+
+Contributions are welcome! Here's how you can help:
+
+1. **Fork the repository**
+2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
+3. **Commit your changes**: `git commit -m 'Add amazing feature'`
+4. **Push to the branch**: `git push origin feature/amazing-feature`
+5. **Open a Pull Request**
+
+### Development Setup
+
+```bash
+# Clone your fork
+git clone https://github.com/nthewara/aznetmon.git
+cd aznetmon
+
+# Install dependencies
+go mod tidy
+
+# Install development tools
+make install-dev-tools
+
+# Run in development mode (with hot reload)
+make dev
+```
+
+### Development Dependencies
+
+- **Go**: 1.24+
+- **WebSocket**: github.com/gorilla/websocket v1.5.3
+- **Net Package**: golang.org/x/net v0.40.0
+- **Air**: Live reload tool (github.com/cosmtrek/air@latest)
+- **Gosec**: Security scanner (github.com/securecodewarrior/gosec/v2)
+
+### Areas for Contribution
+- 🎨 UI/UX improvements
+- 📊 Additional metrics and charts
+- 🔧 Configuration options
+- 🧪 Test coverage
+- 📖 Documentation
+- 🌍 Internationalization
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🌟 Star History
+
+If you find this project useful, please consider giving it a star! ⭐
+
+## 📞 Support
+
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/nthewara/aznetmon/issues)
+- 💡 **Feature Requests**: [GitHub Issues](https://github.com/nthewara/aznetmon/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/nthewara/aznetmon/discussions)
+
+---
+>>>>>>> origin/main
 
 <div align="center">
 
