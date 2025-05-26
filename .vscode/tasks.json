@@ -19,7 +19,7 @@
         {
             "label": "Run with Air (Hot Reload)",
             "type": "shell",
-            "command": "sudo air",
+            "command": "air",
             "group": "none",
             "presentation": {
                 "reveal": "always",

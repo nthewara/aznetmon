@@ -33,8 +33,11 @@ RUN go install github.com/air-verse/air@latest && \
 # Set the working directory
 WORKDIR /workspace
 
-# Add Go bin directory to PATH
+# Add Go bin directory to PATH for all users
 ENV PATH=$PATH:/go/bin
+
+# Add Go bin to secure_path for sudo
+RUN echo 'Defaults secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/go/bin"' >> /etc/sudoers
 
 # Switch to non-root user
 USER $USERNAME
