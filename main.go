@@ -30,7 +30,7 @@ type Monitor struct {
 	targets    []string
 	results    map[string]*ICMPResult
 	mutex      sync.RWMutex
-	clients    map[*websocket.Conn]*sync.Mutex  // Change to store per-connection mutex
+	clients    map[*websocket.Conn]*sync.Mutex // Change to store per-connection mutex
 	clientsMux sync.RWMutex
 	broadcast  chan ICMPResult
 	upgrader   websocket.Upgrader
@@ -174,7 +174,7 @@ func (m *Monitor) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Create a per-connection mutex for synchronized writes
 	connMutex := &sync.Mutex{}
-	
+
 	m.clientsMux.Lock()
 	m.clients[conn] = connMutex
 	m.clientsMux.Unlock()
@@ -223,7 +223,7 @@ func (m *Monitor) broadcastResults() {
 				mutex.Lock()
 				err := c.WriteJSON(result)
 				mutex.Unlock()
-				
+
 				if err != nil {
 					log.Printf("WebSocket write failed: %v", err)
 					c.Close()
