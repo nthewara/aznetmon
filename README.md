@@ -323,6 +323,14 @@ make install-dev-tools
 make dev
 ```
 
+### Development Dependencies
+
+- **Go**: 1.24+
+- **WebSocket**: github.com/gorilla/websocket v1.5.3
+- **Net Package**: golang.org/x/net v0.40.0
+- **Air**: Live reload tool (github.com/cosmtrek/air@latest)
+- **Gosec**: Security scanner (github.com/securecodewarrior/gosec/v2)
+
 ### Areas for Contribution
 - 🎨 UI/UX improvements
 - 📊 Additional metrics and charts

@@ -61,6 +61,13 @@ By participating in this project, you agree to abide by our Code of Conduct. Ple
 - Docker (for container testing)
 - Git
 
+### Dependencies
+- github.com/gorilla/websocket v1.5.3
+- golang.org/x/net v0.40.0
+- Development tools:
+  - github.com/cosmtrek/air (live reload)
+  - github.com/securecodewarrior/gosec/v2 (security scanner)
+
 ### Local Development
 ```bash
 # Clone your fork
