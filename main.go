@@ -30,7 +30,7 @@ type Monitor struct {
 	targets    []string
 	results    map[string]*ICMPResult
 	mutex      sync.RWMutex
-	clients    map[*websocket.Conn]bool
+	clients    map[*websocket.Conn]*sync.Mutex  // Change to store per-connection mutex
 	clientsMux sync.RWMutex
 	broadcast  chan ICMPResult
 	upgrader   websocket.Upgrader
@@ -40,7 +40,7 @@ func NewMonitor(targets []string) *Monitor {
 	return &Monitor{
 		targets:   targets,
 		results:   make(map[string]*ICMPResult),
-		clients:   make(map[*websocket.Conn]bool),
+		clients:   make(map[*websocket.Conn]*sync.Mutex),
 		broadcast: make(chan ICMPResult),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
@@ -172,8 +172,11 @@ func (m *Monitor) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
+	// Create a per-connection mutex for synchronized writes
+	connMutex := &sync.Mutex{}
+	
 	m.clientsMux.Lock()
-	m.clients[conn] = true
+	m.clients[conn] = connMutex
 	m.clientsMux.Unlock()
 
 	defer func() {
@@ -182,10 +185,13 @@ func (m *Monitor) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		m.clientsMux.Unlock()
 	}()
 
-	// Send current results immediately
+	// Send current results immediately (using the connection mutex)
 	m.mutex.RLock()
 	for _, result := range m.results {
-		if err := conn.WriteJSON(result); err != nil {
+		connMutex.Lock()
+		err := conn.WriteJSON(result)
+		connMutex.Unlock()
+		if err != nil {
 			log.Printf("WebSocket write failed: %v", err)
 			m.mutex.RUnlock()
 			return
@@ -210,17 +216,22 @@ func (m *Monitor) broadcastResults() {
 	for {
 		result := <-m.broadcast
 		m.clientsMux.RLock()
-		for client := range m.clients {
+		for client, connMutex := range m.clients {
 			// Write to each client in a separate goroutine to prevent blocking
-			go func(c *websocket.Conn) {
-				if err := c.WriteJSON(result); err != nil {
+			// Use the per-connection mutex to prevent concurrent writes
+			go func(c *websocket.Conn, mutex *sync.Mutex) {
+				mutex.Lock()
+				err := c.WriteJSON(result)
+				mutex.Unlock()
+				
+				if err != nil {
 					log.Printf("WebSocket write failed: %v", err)
 					c.Close()
 					m.clientsMux.Lock()
 					delete(m.clients, c)
 					m.clientsMux.Unlock()
 				}
-			}(client)
+			}(client, connMutex)
 		}
 		m.clientsMux.RUnlock()
 	}
