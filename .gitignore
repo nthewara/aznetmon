@@ -5,6 +5,7 @@
 *.so
 *.dylib
 aznetmon
+aznetmon-*
 
 # Test binary, built with `go test -c`
 *.test
@@ -16,7 +17,10 @@ aznetmon
 go.work
 
 # IDE files
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo
@@ -34,6 +38,10 @@ Thumbs.db
 # Environment files
 .env
 .env.local
+
+# Development
+tmp/
+__debug_bin
 
 # Keep assets directory but ignore temporary files
 assets/*.tmp

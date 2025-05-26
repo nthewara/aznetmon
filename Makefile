@@ -1,4 +1,4 @@
-.PHONY: build run docker-build docker-run clean test help build-all
+.PHONY: build run docker-build docker-run clean test help build-all dev-setup
 
 # Default target
 help:
@@ -14,6 +14,9 @@ help:
 	@echo "  clean        - Clean build artifacts"
 	@echo "  test         - Run tests"
 	@echo "  dev          - Run in development mode with hot reload"
+	@echo "  dev-setup    - Setup development environment"
+	@echo "  fmt          - Format code with go fmt and go vet"
+	@echo "  security     - Run security checks with gosec"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make run TARGETS='8.8.8.8,1.1.1.1'"
@@ -81,19 +84,19 @@ test:
 dev:
 	@if ! command -v air > /dev/null; then \
 		echo "Installing air for live reload..."; \
-		go install github.com/cosmtrek/air@latest; \
+		go install github.com/air-verse/air@latest; \
 	fi
 	air
 
 # Install air for development
 install-dev-tools:
-	go install github.com/cosmtrek/air@latest
+	go install github.com/air-verse/air@latest
 
 # Check for security vulnerabilities
 security:
 	@if ! command -v gosec > /dev/null; then \
 		echo "Installing gosec..."; \
-		go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest; \
+		go install github.com/cosmos/gosec/v2/cmd/gosec@latest; \
 	fi
 	gosec ./...
 
@@ -101,6 +104,19 @@ security:
 fmt:
 	go fmt ./...
 	go vet ./...
+
+# Dev environment setup
+dev-setup: install-dev-tools
+	@echo "Setting up development environment..."
+	@echo "Installing air for hot reload..."
+	go install github.com/air-verse/air@latest
+	@echo "Installing gosec for security scanning..."
+	go install github.com/cosmos/gosec/v2/cmd/gosec@latest
+	@echo "Installing golangci-lint..."
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@echo "Installing delve debugger..."
+	go install github.com/go-delve/delve/cmd/dlv@latest
+	@echo "Development environment setup complete!"
 
 # Show project status
 status:
