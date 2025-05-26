@@ -135,6 +135,25 @@ feat: add support for IPv6 ping monitoring
 Closes #123
 ```
 
+## CI/CD Pipeline
+
+### Automated Workflow Failure Reporting
+
+AzNetMon uses GitHub Actions for continuous integration and deployment. To improve the development experience:
+
+- Workflow failures automatically create GitHub issues
+- Issues include detailed information about the failure, including:
+  - Which jobs and steps failed
+  - Timing information
+  - Links to the full logs
+- This helps track and resolve CI/CD issues more efficiently
+
+If you receive an automatic issue about workflow failures:
+1. Check the failure details provided in the issue
+2. Fix the issue in your branch
+3. Push your changes
+4. If the issue is resolved, close the automatically created issue
+
 ## Areas for Contribution
 
 ### 🚀 High Priority

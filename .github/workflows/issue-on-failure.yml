@@ -1,0 +1,177 @@
+name: Create Issue on Workflow Failure
+
+on:
+  workflow_run:
+    workflows: ["CI/CD Pipeline", "Security Scan"]
+    types:
+      - completed
+
+jobs:
+  create-issue:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    permissions:
+      issues: write
+      actions: read
+    steps:
+      - name: Get workflow run information
+        uses: actions/github-script@v7
+        id: workflow-info
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const owner = run.repository.owner.login;
+            const repo = run.repository.name;
+            
+            // Format date for issue title
+            const date = new Date(run.created_at).toISOString().split('T')[0];
+            
+            // Get workflow name and URL
+            const workflowName = run.name;
+            const workflowURL = run.html_url;
+            
+            // Get commit information
+            const headCommit = run.head_commit;
+            const commitMessage = headCommit ? headCommit.message : 'No commit message available';
+            const commitId = headCommit ? headCommit.id.substring(0, 7) : 'Unknown';
+            const commitURL = headCommit ? headCommit.url : '#';
+            
+            // Get branch information
+            const branch = run.head_branch;
+            
+            return {
+              owner,
+              repo,
+              date,
+              workflowName,
+              workflowURL,
+              commitMessage,
+              commitId,
+              commitURL,
+              branch
+            };
+
+      - name: Get failed jobs information
+        uses: actions/github-script@v7
+        id: jobs-info
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const owner = run.repository.owner.login;
+            const repo = run.repository.name;
+            const run_id = run.id;
+            
+            // Get jobs for the workflow run
+            const { data: jobsData } = await github.rest.actions.listJobsForWorkflowRun({
+              owner,
+              repo,
+              run_id
+            });
+            
+            const jobs = jobsData.jobs;
+            
+            // Format job information, focusing on failed jobs
+            let jobsSummary = "";
+            let failedJobsDetails = "";
+            let failureCount = 0;
+            
+            for (const job of jobs) {
+              const status = job.conclusion;
+              const emoji = status === 'success' ? '✅' : status === 'failure' ? '❌' : '⚠️';
+              
+              jobsSummary += `${emoji} **${job.name}**: ${status}\n`;
+              jobsSummary += `   Started at: ${new Date(job.started_at).toUTCString()}\n`;
+              jobsSummary += `   Completed at: ${new Date(job.completed_at).toUTCString()}\n`;
+              jobsSummary += `   Duration: ${Math.round((new Date(job.completed_at) - new Date(job.started_at))/1000)} seconds\n`;
+              jobsSummary += `   [View job details](${job.html_url})\n\n`;
+              
+              if (status === 'failure') {
+                failureCount++;
+                
+                // Get steps for failed jobs
+                failedJobsDetails += `### Failed Job: ${job.name}\n\n`;
+                failedJobsDetails += `[View detailed logs](${job.html_url})\n\n`;
+                
+                // List steps for the failed job
+                if (job.steps && job.steps.length > 0) {
+                  failedJobsDetails += "**Steps:**\n\n";
+                  
+                  for (const step of job.steps) {
+                    const stepEmoji = step.conclusion === 'success' ? '✅' : 
+                                      step.conclusion === 'failure' ? '❌' : 
+                                      step.conclusion === 'skipped' ? '⏭️' : '⚠️';
+                    
+                    failedJobsDetails += `${stepEmoji} ${step.name} (${step.conclusion})\n`;
+                    
+                    // Add more details for failed steps
+                    if (step.conclusion === 'failure') {
+                      failedJobsDetails += `   - Started: ${new Date(step.started_at).toUTCString()}\n`;
+                      failedJobsDetails += `   - Completed: ${new Date(step.completed_at).toUTCString()}\n`;
+                      failedJobsDetails += `   - Duration: ${Math.round((new Date(step.completed_at) - new Date(step.started_at))/1000)} seconds\n`;
+                    }
+                  }
+                  
+                  failedJobsDetails += "\n";
+                }
+              }
+            }
+            
+            return {
+              jobsSummary,
+              failedJobsDetails,
+              logsURL: run.html_url,
+              failureCount
+            };
+
+      - name: Create issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const info = ${{ steps.workflow-info.outputs.result }};
+            const jobsInfo = ${{ steps.jobs-info.outputs.result }};
+            
+            const title = `🔴 Workflow Failure: ${info.workflowName} [${info.date}]`;
+            
+            const body = `## Workflow Failure Report
+            
+            The **${info.workflowName}** workflow has failed with ${jobsInfo.failureCount} failed jobs.
+            
+            ### Failure Details
+            
+            - **Workflow:** [${info.workflowName}](${info.workflowURL})
+            - **Branch:** \`${info.branch}\`
+            - **Commit:** [${info.commitId}](${info.commitURL}) - ${info.commitMessage}
+            - **Date/Time:** ${new Date(context.payload.workflow_run.created_at).toUTCString()}
+            
+            ### Jobs Status Summary
+            
+            ${jobsInfo.jobsSummary}
+            
+            ### Failed Jobs Details
+            
+            ${jobsInfo.failedJobsDetails || "*No detailed failure information available*"}
+            
+            ### Complete Logs and Details
+            
+            You can view the complete logs and details of the failure here:
+            - [View Workflow Run](${jobsInfo.logsURL})
+            
+            ### Additional Information
+            
+            This issue was automatically created by the GitHub Actions workflow.
+            Please investigate the failure and resolve the issue.
+            
+            cc/ @${context.payload.workflow_run.actor.login}
+            `;
+            
+            // Create GitHub issue
+            const issue = await github.rest.issues.create({
+              owner: info.owner,
+              repo: info.repo,
+              title: title,
+              body: body,
+              labels: ['bug', 'automation', 'workflow-failure']
+            });
+            
+            console.log(`Issue created: ${issue.data.html_url}`);
