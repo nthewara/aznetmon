@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 🔒 Secure non-root container execution
 
 ### Technical
-- Go 1.21+ compatibility
+- Go 1.24+ compatibility
 - Alpine Linux base image
 - NET_RAW capability support
 - Concurrent WebSocket handling

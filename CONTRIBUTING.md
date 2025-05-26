@@ -57,7 +57,7 @@ By participating in this project, you agree to abide by our Code of Conduct. Ple
 ## Development Setup
 
 ### Prerequisites
-- Go 1.21 or higher
+- Go 1.24 or higher
 - Docker (for container testing)
 - Git
 
