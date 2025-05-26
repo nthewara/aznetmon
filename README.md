@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)
+![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![Size](https://img.shields.io/badge/Size-~47MB-orange?style=for-the-badge)
@@ -49,7 +49,7 @@ Then open http://localhost:8080 in your browser! 🎉
 
 ### Local Development
 
-1. **Prerequisites**: Go 1.21+ installed
+1. **Prerequisites**: Go 1.24+ installed
 
 2. **Clone and run**:
    ```bash
@@ -199,7 +199,7 @@ AzNetMon requires `NET_RAW` capability to send ICMP packets:
 - **Memory**: ~5-10MB runtime
 - **CPU**: Minimal usage (~0.1% on modern systems)
 - **Network**: Outbound ICMP traffic
-- **Go Version**: 1.21+ (for building from source)
+- **Go Version**: 1.24+ (for building from source)
 
 ## 🏗️ Building from Source
 
@@ -322,6 +322,14 @@ make install-dev-tools
 # Run in development mode (with hot reload)
 make dev
 ```
+
+### Development Dependencies
+
+- **Go**: 1.24+
+- **WebSocket**: github.com/gorilla/websocket v1.5.3
+- **Net Package**: golang.org/x/net v0.40.0
+- **Air**: Live reload tool (github.com/cosmtrek/air@latest)
+- **Gosec**: Security scanner (github.com/securecodewarrior/gosec/v2)
 
 ### Areas for Contribution
 - 🎨 UI/UX improvements
