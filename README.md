@@ -47,18 +47,6 @@ docker run --cap-add=NET_RAW -p 8080:8080 -e ICMP_TARGETS="8.8.8.8,1.1.1.1,googl
 
 Then open http://localhost:8080 in your browser! 🎉
 
-### Development with VS Code Dev Container
-
-For the best development experience, use our Dev Container configuration:
-
-1. Install [VS Code](https://code.visualstudio.com/) and the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
-2. Clone the repository and open it in VS Code
-3. When prompted, click "Reopen in Container" or use the Command Palette (F1) and select "Dev Containers: Reopen in Container"
-4. The container will build with all development tools pre-installed
-5. Use the integrated terminal to run `make dev` for hot reload or use VS Code's debugger (F5)
-
-The Dev Container includes all the tools you need for development, testing, and debugging!
-
 ### Local Development
 
 1. **Prerequisites**: Go 1.24+ installed
