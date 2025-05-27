@@ -26,28 +26,71 @@ type ICMPResult struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-type Monitor struct {
-	targets    []string
-	results    map[string]*ICMPResult
-	mutex      sync.RWMutex
-	clients    map[*websocket.Conn]*sync.Mutex // Change to store per-connection mutex
-	clientsMux sync.RWMutex
-	broadcast  chan ICMPResult
-	upgrader   websocket.Upgrader
+type TargetSummary struct {
+	Target     string  `json:"target"`
+	TotalTests int     `json:"total_tests"`
+	Successful int     `json:"successful"`
+	Failed     int     `json:"failed"`
+	PacketLoss float64 `json:"packet_loss_percent"`
+	AvgLatency float64 `json:"avg_latency_ms"`
+	LastError  string  `json:"last_error,omitempty"`
 }
 
-func NewMonitor(targets []string) *Monitor {
-	return &Monitor{
-		targets:   targets,
-		results:   make(map[string]*ICMPResult),
-		clients:   make(map[*websocket.Conn]*sync.Mutex),
-		broadcast: make(chan ICMPResult),
+type DashboardSummary struct {
+	Timestamp      time.Time       `json:"timestamp"`
+	TotalTargets   int             `json:"total_targets"`
+	OnlineTargets  int             `json:"online_targets"`
+	OfflineTargets int             `json:"offline_targets"`
+	AvgLatency     float64         `json:"avg_latency_ms"`
+	TargetStats    []TargetSummary `json:"target_stats"`
+}
+
+type Monitor struct {
+	targets         []string
+	results         map[string]*ICMPResult
+	summaryData     map[string]*TargetSummary
+	mutex           sync.RWMutex
+	clients         map[*websocket.Conn]*sync.Mutex // Change to store per-connection mutex
+	clientsMux      sync.RWMutex
+	broadcast       chan ICMPResult
+	summaryChan     chan DashboardSummary
+	upgrader        websocket.Upgrader
+	testDuration    time.Duration
+	testEndTime     time.Time
+	testEndTimeLock sync.RWMutex
+}
+
+func NewMonitor(targets []string, testDuration time.Duration) *Monitor {
+	m := &Monitor{
+		targets:      targets,
+		results:      make(map[string]*ICMPResult),
+		summaryData:  make(map[string]*TargetSummary),
+		clients:      make(map[*websocket.Conn]*sync.Mutex),
+		broadcast:    make(chan ICMPResult),
+		summaryChan:  make(chan DashboardSummary),
+		testDuration: testDuration,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				return true // Allow all origins in this simple app
 			},
 		},
 	}
+
+	// Initialize summary data for each target
+	for _, target := range targets {
+		m.summaryData[target] = &TargetSummary{
+			Target: target,
+		}
+	}
+
+	// If a test duration was specified, set the end time
+	if testDuration > 0 {
+		m.testEndTimeLock.Lock()
+		m.testEndTime = time.Now().Add(testDuration)
+		m.testEndTimeLock.Unlock()
+	}
+
+	return m
 }
 
 func (m *Monitor) ping(target string) ICMPResult {
@@ -140,17 +183,61 @@ func (m *Monitor) ping(target string) ICMPResult {
 
 func (m *Monitor) startMonitoring() {
 	ticker := time.NewTicker(2 * time.Second)
+	summaryTicker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
+	defer summaryTicker.Stop()
+
+	// Send an initial summary
+	go m.generateAndSendSummary()
 
 	for {
 		select {
 		case <-ticker.C:
+			// Check if test duration has elapsed
+			if m.testDuration > 0 {
+				m.testEndTimeLock.RLock()
+				endTime := m.testEndTime
+				m.testEndTimeLock.RUnlock()
+
+				if time.Now().After(endTime) {
+					log.Printf("Test duration of %v has elapsed. Monitoring stopped.", m.testDuration)
+					return
+				}
+			}
+
 			for _, target := range m.targets {
 				go func(t string) {
 					result := m.ping(t)
 
 					m.mutex.Lock()
 					m.results[t] = &result
+
+					// Update summary data
+					summary, exists := m.summaryData[t]
+					if !exists {
+						summary = &TargetSummary{
+							Target: t,
+						}
+						m.summaryData[t] = summary
+					}
+
+					summary.TotalTests++
+					if result.Success {
+						summary.Successful++
+						// Update rolling average latency
+						if summary.AvgLatency == 0 {
+							summary.AvgLatency = result.Duration
+						} else {
+							summary.AvgLatency = (summary.AvgLatency*float64(summary.Successful-1) + result.Duration) / float64(summary.Successful)
+						}
+					} else {
+						summary.Failed++
+						summary.LastError = result.Error
+					}
+
+					// Calculate packet loss percentage
+					summary.PacketLoss = float64(summary.Failed) / float64(summary.TotalTests) * 100
+
 					m.mutex.Unlock()
 
 					// Broadcast to WebSocket clients
@@ -160,7 +247,48 @@ func (m *Monitor) startMonitoring() {
 					}
 				}(target)
 			}
+		case <-summaryTicker.C:
+			go m.generateAndSendSummary()
 		}
+	}
+}
+
+func (m *Monitor) generateAndSendSummary() {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	summary := DashboardSummary{
+		Timestamp:    time.Now(),
+		TotalTargets: len(m.targets),
+		TargetStats:  make([]TargetSummary, 0, len(m.targets)),
+	}
+
+	// Copy target summaries
+	var totalOnline int
+	var totalLatency float64
+
+	for _, targetSummary := range m.summaryData {
+		summary.TargetStats = append(summary.TargetStats, *targetSummary)
+
+		// Count online targets (those with the most recent ping successful)
+		targetResult, exists := m.results[targetSummary.Target]
+		if exists && targetResult.Success {
+			totalOnline++
+			totalLatency += targetSummary.AvgLatency
+		}
+	}
+
+	summary.OnlineTargets = totalOnline
+	summary.OfflineTargets = len(m.targets) - totalOnline
+
+	if totalOnline > 0 {
+		summary.AvgLatency = totalLatency / float64(totalOnline)
+	}
+
+	// Send to all WebSocket clients
+	select {
+	case m.summaryChan <- summary:
+	default:
 	}
 }
 
@@ -214,26 +342,50 @@ func (m *Monitor) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 func (m *Monitor) broadcastResults() {
 	for {
-		result := <-m.broadcast
-		m.clientsMux.RLock()
-		for client, connMutex := range m.clients {
-			// Write to each client in a separate goroutine to prevent blocking
-			// Use the per-connection mutex to prevent concurrent writes
-			go func(c *websocket.Conn, mutex *sync.Mutex) {
-				mutex.Lock()
-				err := c.WriteJSON(result)
-				mutex.Unlock()
+		select {
+		case result := <-m.broadcast:
+			m.clientsMux.RLock()
+			for client, connMutex := range m.clients {
+				// Write to each client in a separate goroutine to prevent blocking
+				// Use the per-connection mutex to prevent concurrent writes
+				go func(c *websocket.Conn, mutex *sync.Mutex) {
+					mutex.Lock()
+					err := c.WriteJSON(result)
+					mutex.Unlock()
 
-				if err != nil {
-					log.Printf("WebSocket write failed: %v", err)
-					c.Close()
-					m.clientsMux.Lock()
-					delete(m.clients, c)
-					m.clientsMux.Unlock()
-				}
-			}(client, connMutex)
+					if err != nil {
+						log.Printf("WebSocket write failed: %v", err)
+						c.Close()
+						m.clientsMux.Lock()
+						delete(m.clients, c)
+						m.clientsMux.Unlock()
+					}
+				}(client, connMutex)
+			}
+			m.clientsMux.RUnlock()
+
+		case summary := <-m.summaryChan:
+			m.clientsMux.RLock()
+			for client, connMutex := range m.clients {
+				go func(c *websocket.Conn, mutex *sync.Mutex) {
+					mutex.Lock()
+					err := c.WriteJSON(map[string]interface{}{
+						"type":    "summary",
+						"summary": summary,
+					})
+					mutex.Unlock()
+
+					if err != nil {
+						log.Printf("WebSocket summary write failed: %v", err)
+						c.Close()
+						m.clientsMux.Lock()
+						delete(m.clients, c)
+						m.clientsMux.Unlock()
+					}
+				}(client, connMutex)
+			}
+			m.clientsMux.RUnlock()
 		}
-		m.clientsMux.RUnlock()
 	}
 }
 
@@ -420,6 +572,17 @@ const htmlTemplate = `
         .loading {
             animation: pulse 1.5s infinite;
         }
+        
+        .summary-info {
+            text-align: center;
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(5px);
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
     </style>
 </head>
 <body>
@@ -448,6 +611,10 @@ const htmlTemplate = `
             </div>
         </div>
         
+        <div id="summary-info" class="summary-info">
+            <p id="last-summary-update">Waiting for summary data...</p>
+        </div>
+        
         <div id="loading" class="loading">
             Connecting to monitoring service...
         </div>
@@ -458,6 +625,7 @@ const htmlTemplate = `
 
     <script>
         let results = {};
+        let summaryData = null;
         let socket;
         
         function connect() {
@@ -471,9 +639,20 @@ const htmlTemplate = `
             };
             
             socket.onmessage = function(event) {
-                const result = JSON.parse(event.data);
-                results[result.target] = result;
-                updateDisplay();
+                const data = JSON.parse(event.data);
+                
+                // Check if this is a summary message
+                if (data.type === 'summary') {
+                    summaryData = data.summary;
+                    updateDisplay();
+                    // Add timestamp for the last summary update
+                    const timestamp = new Date(summaryData.timestamp);
+                    document.getElementById('last-summary-update').textContent = 'Last summary update: ' + timestamp.toLocaleTimeString();
+                } else {
+                    // Regular ping result
+                    results[data.target] = data;
+                    updateDisplay();
+                }
             };
             
             socket.onclose = function() {
@@ -492,6 +671,16 @@ const htmlTemplate = `
         }
         
         function updateStats() {
+            // If we have summary data, use it for the stats
+            if (summaryData) {
+                document.getElementById('total-targets').textContent = summaryData.total_targets;
+                document.getElementById('online-targets').textContent = summaryData.online_targets;
+                document.getElementById('offline-targets').textContent = summaryData.offline_targets;
+                document.getElementById('avg-latency').textContent = summaryData.avg_latency_ms.toFixed(1);
+                return;
+            }
+            
+            // Fall back to calculating from individual results if no summary available
             const targets = Object.values(results);
             const total = targets.length;
             const online = targets.filter(t => t.success).length;
@@ -510,10 +699,65 @@ const htmlTemplate = `
             const container = document.getElementById('targets-container');
             container.innerHTML = '';
             
-            Object.values(results).forEach(result => {
-                const card = createTargetCard(result);
-                container.appendChild(card);
-            });
+            // If we have summary data, use it to enhance the target cards
+            if (summaryData) {
+                summaryData.target_stats.forEach(targetSummary => {
+                    // Find the corresponding current result
+                    const currentResult = results[targetSummary.target];
+                    
+                    // Create a card that combines current status with summary data
+                    const card = createTargetCardWithSummary(currentResult, targetSummary);
+                    container.appendChild(card);
+                });
+            } else {
+                // Fall back to basic display using only current results
+                Object.values(results).forEach(result => {
+                    const card = createTargetCard(result);
+                    container.appendChild(card);
+                });
+            }
+        }
+        
+        function createTargetCardWithSummary(result, summary) {
+            const card = document.createElement('div');
+            card.className = 'target-card';
+            
+            // Determine current status
+            const currentStatusClass = result && result.success ? 'online' : 'offline';
+            const currentStatusText = result && result.success ? 'Online' : 'Offline';
+            const currentLatency = result && result.success ? result.duration_ms.toFixed(1) : '-';
+            const timestamp = result ? new Date(result.timestamp).toLocaleTimeString() : '-';
+            
+            card.innerHTML = 
+                '<div class="target-header">' +
+                    '<div class="target-name">' + summary.target + '</div>' +
+                    '<div class="status ' + currentStatusClass + '">' + currentStatusText + '</div>' +
+                '</div>' +
+                '<div class="target-metrics">' +
+                    '<div class="metric">' +
+                        '<div class="metric-value">' + currentLatency + '</div>' +
+                        '<div class="metric-label">Current Latency (ms)</div>' +
+                    '</div>' +
+                    '<div class="metric">' +
+                        '<div class="metric-value">' + summary.avg_latency_ms.toFixed(1) + '</div>' +
+                        '<div class="metric-label">Avg Latency (ms)</div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="target-metrics">' +
+                    '<div class="metric">' +
+                        '<div class="metric-value">' + summary.packet_loss_percent.toFixed(1) + '%</div>' +
+                        '<div class="metric-label">Packet Loss</div>' +
+                    '</div>' +
+                    '<div class="metric">' +
+                        '<div class="metric-value">' + summary.successful + '/' + summary.total_tests + '</div>' +
+                        '<div class="metric-label">Success Rate</div>' +
+                    '</div>' +
+                '</div>' +
+                (result && result.error ? '<div class="error-message">' + result.error + '</div>' : '') +
+                (summary.last_error && (!result || !result.error) ? '<div class="error-message">Last error: ' + summary.last_error + '</div>' : '') +
+                '<div class="last-updated">Last updated: ' + timestamp + '</div>';
+            
+            return card;
         }
         
         function createTargetCard(result) {
@@ -556,14 +800,21 @@ const htmlTemplate = `
 func main() {
 	var targets string
 	var port int
+	var duration string
 
 	flag.StringVar(&targets, "targets", "", "Comma-separated list of IP addresses or hostnames to monitor")
 	flag.IntVar(&port, "port", 8080, "Port to run the web server on")
+	flag.StringVar(&duration, "duration", "", "Duration for ICMP testing (e.g., 1h, 30m, 24h). If not specified, testing continues indefinitely")
 	flag.Parse()
 
 	// Get targets from environment variable if not provided via flag
 	if targets == "" {
 		targets = os.Getenv("ICMP_TARGETS")
+	}
+
+	// Get duration from environment variable if not provided via flag
+	if duration == "" {
+		duration = os.Getenv("ICMP_DURATION")
 	}
 
 	if targets == "" {
@@ -577,10 +828,25 @@ func main() {
 		targetList[i] = strings.TrimSpace(target)
 	}
 
+	// Parse duration if provided
+	var testDuration time.Duration
+	if duration != "" {
+		var err error
+		testDuration, err = time.ParseDuration(duration)
+		if err != nil {
+			fmt.Printf("Error: Invalid duration format '%s': %v\n", duration, err)
+			fmt.Println("Valid examples: 30m, 2h, 24h, 7d")
+			os.Exit(1)
+		}
+		fmt.Printf("ICMP testing will run for: %v\n", testDuration)
+	} else {
+		fmt.Println("ICMP testing will run continuously (no duration specified)")
+	}
+
 	fmt.Printf("Starting AzNetMon on port %d\n", port)
 	fmt.Printf("Monitoring targets: %v\n", targetList)
 
-	monitor := NewMonitor(targetList)
+	monitor := NewMonitor(targetList, testDuration)
 
 	// Start monitoring in background
 	go monitor.startMonitoring()
