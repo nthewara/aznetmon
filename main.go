@@ -62,12 +62,12 @@ type Monitor struct {
 
 func NewMonitor(targets []string, testDuration time.Duration) *Monitor {
 	m := &Monitor{
-		targets:     targets,
-		results:     make(map[string]*ICMPResult),
-		summaryData: make(map[string]*TargetSummary),
-		clients:     make(map[*websocket.Conn]*sync.Mutex),
-		broadcast:   make(chan ICMPResult),
-		summaryChan: make(chan DashboardSummary),
+		targets:      targets,
+		results:      make(map[string]*ICMPResult),
+		summaryData:  make(map[string]*TargetSummary),
+		clients:      make(map[*websocket.Conn]*sync.Mutex),
+		broadcast:    make(chan ICMPResult),
+		summaryChan:  make(chan DashboardSummary),
 		testDuration: testDuration,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
@@ -75,21 +75,21 @@ func NewMonitor(targets []string, testDuration time.Duration) *Monitor {
 			},
 		},
 	}
-	
+
 	// Initialize summary data for each target
 	for _, target := range targets {
 		m.summaryData[target] = &TargetSummary{
 			Target: target,
 		}
 	}
-	
+
 	// If a test duration was specified, set the end time
 	if testDuration > 0 {
 		m.testEndTimeLock.Lock()
 		m.testEndTime = time.Now().Add(testDuration)
 		m.testEndTimeLock.Unlock()
 	}
-	
+
 	return m
 }
 
@@ -198,20 +198,20 @@ func (m *Monitor) startMonitoring() {
 				m.testEndTimeLock.RLock()
 				endTime := m.testEndTime
 				m.testEndTimeLock.RUnlock()
-				
+
 				if time.Now().After(endTime) {
 					log.Printf("Test duration of %v has elapsed. Monitoring stopped.", m.testDuration)
 					return
 				}
 			}
-			
+
 			for _, target := range m.targets {
 				go func(t string) {
 					result := m.ping(t)
 
 					m.mutex.Lock()
 					m.results[t] = &result
-					
+
 					// Update summary data
 					summary, exists := m.summaryData[t]
 					if !exists {
@@ -220,7 +220,7 @@ func (m *Monitor) startMonitoring() {
 						}
 						m.summaryData[t] = summary
 					}
-					
+
 					summary.TotalTests++
 					if result.Success {
 						summary.Successful++
@@ -234,10 +234,10 @@ func (m *Monitor) startMonitoring() {
 						summary.Failed++
 						summary.LastError = result.Error
 					}
-					
+
 					// Calculate packet loss percentage
 					summary.PacketLoss = float64(summary.Failed) / float64(summary.TotalTests) * 100
-					
+
 					m.mutex.Unlock()
 
 					// Broadcast to WebSocket clients
@@ -256,20 +256,20 @@ func (m *Monitor) startMonitoring() {
 func (m *Monitor) generateAndSendSummary() {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	summary := DashboardSummary{
 		Timestamp:    time.Now(),
 		TotalTargets: len(m.targets),
 		TargetStats:  make([]TargetSummary, 0, len(m.targets)),
 	}
-	
+
 	// Copy target summaries
 	var totalOnline int
 	var totalLatency float64
-	
+
 	for _, targetSummary := range m.summaryData {
 		summary.TargetStats = append(summary.TargetStats, *targetSummary)
-		
+
 		// Count online targets (those with the most recent ping successful)
 		targetResult, exists := m.results[targetSummary.Target]
 		if exists && targetResult.Success {
@@ -277,14 +277,14 @@ func (m *Monitor) generateAndSendSummary() {
 			totalLatency += targetSummary.AvgLatency
 		}
 	}
-	
+
 	summary.OnlineTargets = totalOnline
 	summary.OfflineTargets = len(m.targets) - totalOnline
-	
+
 	if totalOnline > 0 {
 		summary.AvgLatency = totalLatency / float64(totalOnline)
 	}
-	
+
 	// Send to all WebSocket clients
 	select {
 	case m.summaryChan <- summary:
@@ -363,7 +363,7 @@ func (m *Monitor) broadcastResults() {
 				}(client, connMutex)
 			}
 			m.clientsMux.RUnlock()
-			
+
 		case summary := <-m.summaryChan:
 			m.clientsMux.RLock()
 			for client, connMutex := range m.clients {
@@ -811,7 +811,7 @@ func main() {
 	if targets == "" {
 		targets = os.Getenv("ICMP_TARGETS")
 	}
-	
+
 	// Get duration from environment variable if not provided via flag
 	if duration == "" {
 		duration = os.Getenv("ICMP_DURATION")
