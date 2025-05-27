@@ -1,4 +1,4 @@
-# 🌐 AzNetMon - Lightning Fast ICMP Network Monitor
+# 🌐 AzNetMon - Lightning Fast Network Monitor (ICMP & TCP)
 
 <div align="center">
 
@@ -8,7 +8,7 @@
 ![Size](https://img.shields.io/badge/Size-~47MB-orange?style=for-the-badge)
 ![Production](https://img.shields.io/badge/Production-Ready-brightgreen?style=for-the-badge)
 
-**A super lightweight and lightning-fast web application for real-time ICMP network monitoring**
+**A super lightweight and lightning-fast web application for real-time network monitoring (ICMP & TCP)**
 
 [Features](#-features) • [Quick Start](#-quick-start) • [Docker](#-docker-deployment) • [API](#-api-documentation) • [Contributing](#-contributing)
 
@@ -110,33 +110,40 @@ docker run -d \
 ### Command Line Arguments
 | Flag | Description | Default | Example |
 |------|-------------|---------|---------|
-| `-targets` | Comma-separated list of IPs/hostnames | Required | `"8.8.8.8,google.com"` |
+| `-targets` | Comma-separated list of IPs/hostnames for ICMP testing | Optional | `"8.8.8.8,google.com"` |
+| `-tcp-targets` | Comma-separated list of host:port addresses for TCP testing | Optional | `"google.com:80,github.com:443"` |
 | `-port` | Web server port | `8080` | `3000` |
 
 ### Environment Variables
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `ICMP_TARGETS` | Target hosts (alternative to `-targets`) | `"8.8.8.8,1.1.1.1,github.com"` |
+| `ICMP_TARGETS` | Target hosts for ICMP testing (alternative to `-targets`) | `"8.8.8.8,1.1.1.1,github.com"` |
+| `TCP_TARGETS` | Target host:port for TCP testing (alternative to `-tcp-targets`) | `"google.com:80,github.com:443"` |
 
 ### Usage Examples
 
 ```bash
-# Monitor single target
-./aznetmon -targets "8.8.8.8"
-
-# Monitor multiple targets
+# ICMP monitoring (ping)
 ./aznetmon -targets "8.8.8.8,1.1.1.1,google.com,github.com"
 
-# Custom port
-./aznetmon -targets "8.8.8.8" -port 3000
+# TCP monitoring
+./aznetmon -tcp-targets "google.com:80,github.com:443,example.com:8080"
 
-# Using environment variable
+# Combined ICMP and TCP monitoring
+./aznetmon -targets "8.8.8.8,1.1.1.1" -tcp-targets "google.com:80,github.com:443"
+
+# Custom port
+./aznetmon -targets "8.8.8.8" -tcp-targets "google.com:80" -port 3000
+
+# Using environment variables
 export ICMP_TARGETS="192.168.1.1,8.8.8.8,cloudflare.com"
+export TCP_TARGETS="google.com:80,github.com:443"
 ./aznetmon
 
 # Docker with custom configuration
 docker run --cap-add=NET_RAW -p 3000:8080 \
   -e ICMP_TARGETS="10.0.0.1,192.168.1.1" \
+  -e TCP_TARGETS="google.com:80,github.com:443" \
   aznetmon
 ```
 

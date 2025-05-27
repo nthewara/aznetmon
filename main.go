@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,8 +19,10 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
-type ICMPResult struct {
+type TestResult struct {
 	Target    string    `json:"target"`
+	Protocol  string    `json:"protocol"`
+	Port      int       `json:"port,omitempty"`
 	Success   bool      `json:"success"`
 	Duration  float64   `json:"duration_ms"`
 	Error     string    `json:"error,omitempty"`
@@ -27,21 +30,23 @@ type ICMPResult struct {
 }
 
 type Monitor struct {
-	targets    []string
-	results    map[string]*ICMPResult
-	mutex      sync.RWMutex
-	clients    map[*websocket.Conn]*sync.Mutex // Change to store per-connection mutex
-	clientsMux sync.RWMutex
-	broadcast  chan ICMPResult
-	upgrader   websocket.Upgrader
+	icmpTargets []string
+	tcpTargets  map[string]int // host -> port mapping
+	results     map[string]*TestResult
+	mutex       sync.RWMutex
+	clients     map[*websocket.Conn]*sync.Mutex // Change to store per-connection mutex
+	clientsMux  sync.RWMutex
+	broadcast   chan TestResult
+	upgrader    websocket.Upgrader
 }
 
-func NewMonitor(targets []string) *Monitor {
+func NewMonitor(icmpTargets []string, tcpTargets map[string]int) *Monitor {
 	return &Monitor{
-		targets:   targets,
-		results:   make(map[string]*ICMPResult),
-		clients:   make(map[*websocket.Conn]*sync.Mutex),
-		broadcast: make(chan ICMPResult),
+		icmpTargets: icmpTargets,
+		tcpTargets:  tcpTargets,
+		results:     make(map[string]*TestResult),
+		clients:     make(map[*websocket.Conn]*sync.Mutex),
+		broadcast:   make(chan TestResult),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				return true // Allow all origins in this simple app
@@ -50,14 +55,15 @@ func NewMonitor(targets []string) *Monitor {
 	}
 }
 
-func (m *Monitor) ping(target string) ICMPResult {
+func (m *Monitor) ping(target string) TestResult {
 	start := time.Now()
 
 	// Resolve the address
 	dst, err := net.ResolveIPAddr("ip4", target)
 	if err != nil {
-		return ICMPResult{
+		return TestResult{
 			Target:    target,
+			Protocol:  "ICMP",
 			Success:   false,
 			Duration:  0,
 			Error:     fmt.Sprintf("Failed to resolve %s: %v", target, err),
@@ -68,8 +74,9 @@ func (m *Monitor) ping(target string) ICMPResult {
 	// Create ICMP connection
 	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
 	if err != nil {
-		return ICMPResult{
+		return TestResult{
 			Target:    target,
+			Protocol:  "ICMP",
 			Success:   false,
 			Duration:  0,
 			Error:     fmt.Sprintf("Failed to create ICMP socket: %v", err),
@@ -91,8 +98,9 @@ func (m *Monitor) ping(target string) ICMPResult {
 
 	data, err := message.Marshal(nil)
 	if err != nil {
-		return ICMPResult{
+		return TestResult{
 			Target:    target,
+			Protocol:  "ICMP",
 			Success:   false,
 			Duration:  0,
 			Error:     fmt.Sprintf("Failed to marshal ICMP message: %v", err),
@@ -106,8 +114,9 @@ func (m *Monitor) ping(target string) ICMPResult {
 	// Send packet
 	_, err = conn.WriteTo(data, dst)
 	if err != nil {
-		return ICMPResult{
+		return TestResult{
 			Target:    target,
+			Protocol:  "ICMP",
 			Success:   false,
 			Duration:  0,
 			Error:     fmt.Sprintf("Failed to send ICMP packet: %v", err),
@@ -121,8 +130,9 @@ func (m *Monitor) ping(target string) ICMPResult {
 	duration := time.Since(start)
 
 	if err != nil {
-		return ICMPResult{
+		return TestResult{
 			Target:    target,
+			Protocol:  "ICMP",
 			Success:   false,
 			Duration:  0,
 			Error:     fmt.Sprintf("Failed to receive ICMP reply: %v", err),
@@ -130,8 +140,50 @@ func (m *Monitor) ping(target string) ICMPResult {
 		}
 	}
 
-	return ICMPResult{
+	return TestResult{
 		Target:    target,
+		Protocol:  "ICMP",
+		Success:   true,
+		Duration:  float64(duration.Nanoseconds()) / 1e6, // Convert to milliseconds
+		Timestamp: time.Now(),
+	}
+}
+
+func (m *Monitor) tcpTest(target string, port int) TestResult {
+	start := time.Now()
+
+	// Create address with port
+	address := fmt.Sprintf("%s:%d", target, port)
+
+	// Set a timeout for the connection
+	dialer := net.Dialer{
+		Timeout: 3 * time.Second,
+	}
+
+	// Attempt to establish TCP connection
+	conn, err := dialer.Dial("tcp", address)
+	if err != nil {
+		return TestResult{
+			Target:    target,
+			Protocol:  "TCP",
+			Port:      port,
+			Success:   false,
+			Duration:  0,
+			Error:     fmt.Sprintf("Failed TCP connection to %s: %v", address, err),
+			Timestamp: time.Now(),
+		}
+	}
+
+	// Close the connection
+	conn.Close()
+
+	duration := time.Since(start)
+
+	// Return successful result
+	return TestResult{
+		Target:    target,
+		Protocol:  "TCP",
+		Port:      port,
 		Success:   true,
 		Duration:  float64(duration.Nanoseconds()) / 1e6, // Convert to milliseconds
 		Timestamp: time.Now(),
@@ -145,7 +197,8 @@ func (m *Monitor) startMonitoring() {
 	for {
 		select {
 		case <-ticker.C:
-			for _, target := range m.targets {
+			// Test ICMP targets
+			for _, target := range m.icmpTargets {
 				go func(t string) {
 					result := m.ping(t)
 
@@ -159,6 +212,26 @@ func (m *Monitor) startMonitoring() {
 					default:
 					}
 				}(target)
+			}
+
+			// Test TCP targets
+			for target, port := range m.tcpTargets {
+				go func(t string, p int) {
+					result := m.tcpTest(t, p)
+
+					// Use a key that includes the protocol to avoid conflicts
+					resultKey := fmt.Sprintf("%s-tcp-%d", t, p)
+
+					m.mutex.Lock()
+					m.results[resultKey] = &result
+					m.mutex.Unlock()
+
+					// Broadcast to WebSocket clients
+					select {
+					case m.broadcast <- result:
+					default:
+					}
+				}(target, port)
 			}
 		}
 	}
@@ -251,7 +324,7 @@ const htmlTemplate = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AzNetMon - ICMP Monitor</title>
+    <title>AzNetMon - Network Monitor</title>
     <style>
         * {
             margin: 0;
@@ -405,6 +478,27 @@ const htmlTemplate = `
             margin-top: 15px;
         }
         
+        .protocol-badge {
+            display: inline-block;
+            background: #e2e3e5;
+            color: #383d41;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin-left: 8px;
+            font-weight: normal;
+        }
+        
+        .protocol-badge.icmp {
+            background: #cce5ff;
+            color: #004085;
+        }
+        
+        .protocol-badge.tcp {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
         .loading {
             text-align: center;
             color: white;
@@ -426,7 +520,7 @@ const htmlTemplate = `
     <div class="container">
         <div class="header">
             <h1>🌐 AzNetMon</h1>
-            <p>Real-time ICMP Network Monitoring Dashboard</p>
+            <p>Real-time Network Monitoring Dashboard (ICMP & TCP)</p>
         </div>
         
         <div class="stats">
@@ -472,7 +566,10 @@ const htmlTemplate = `
             
             socket.onmessage = function(event) {
                 const result = JSON.parse(event.data);
-                results[result.target] = result;
+                const key = result.protocol === 'TCP' ? 
+                    result.target + '-tcp-' + result.port : 
+                    result.target;
+                results[key] = result;
                 updateDisplay();
             };
             
@@ -525,9 +622,19 @@ const htmlTemplate = `
             const latency = result.success ? result.duration_ms.toFixed(1) : '-';
             const timestamp = new Date(result.timestamp).toLocaleTimeString();
             
+            // Create display name based on protocol
+            let displayName = result.target;
+            if (result.protocol === 'TCP' && result.port) {
+                displayName += ':' + result.port;
+            }
+            
+            // Create protocol badge
+            const protocolClass = result.protocol.toLowerCase();
+            const protocolBadge = '<span class="protocol-badge ' + protocolClass + '">' + result.protocol + '</span>';
+            
             card.innerHTML = 
                 '<div class="target-header">' +
-                    '<div class="target-name">' + result.target + '</div>' +
+                    '<div class="target-name">' + displayName + ' ' + protocolBadge + '</div>' +
                     '<div class="status ' + statusClass + '">' + statusText + '</div>' +
                 '</div>' +
                 '<div class="target-metrics">' +
@@ -554,33 +661,75 @@ const htmlTemplate = `
 `
 
 func main() {
-	var targets string
+	var icmpTargets string
+	var tcpTargets string
 	var port int
 
-	flag.StringVar(&targets, "targets", "", "Comma-separated list of IP addresses or hostnames to monitor")
+	flag.StringVar(&icmpTargets, "targets", "", "Comma-separated list of IP addresses or hostnames to monitor with ICMP")
+	flag.StringVar(&tcpTargets, "tcp-targets", "", "Comma-separated list of IP:port addresses to monitor with TCP (e.g., google.com:80,example.com:443)")
 	flag.IntVar(&port, "port", 8080, "Port to run the web server on")
 	flag.Parse()
 
-	// Get targets from environment variable if not provided via flag
-	if targets == "" {
-		targets = os.Getenv("ICMP_TARGETS")
+	// Get targets from environment variables if not provided via flags
+	if icmpTargets == "" {
+		icmpTargets = os.Getenv("ICMP_TARGETS")
+	}
+	if tcpTargets == "" {
+		tcpTargets = os.Getenv("TCP_TARGETS")
 	}
 
-	if targets == "" {
-		fmt.Println("Error: No targets specified. Use -targets flag or ICMP_TARGETS environment variable.")
-		fmt.Println("Example: ./aznetmon -targets 8.8.8.8,1.1.1.1,google.com")
+	if icmpTargets == "" && tcpTargets == "" {
+		fmt.Println("Error: No targets specified. Use -targets flag for ICMP or -tcp-targets for TCP.")
+		fmt.Println("Examples:")
+		fmt.Println("  ./aznetmon -targets 8.8.8.8,1.1.1.1,google.com")
+		fmt.Println("  ./aznetmon -tcp-targets google.com:80,example.com:443")
+		fmt.Println("  ./aznetmon -targets 8.8.8.8 -tcp-targets google.com:80")
 		os.Exit(1)
 	}
 
-	targetList := strings.Split(targets, ",")
-	for i, target := range targetList {
-		targetList[i] = strings.TrimSpace(target)
+	// Process ICMP targets
+	var icmpTargetList []string
+	if icmpTargets != "" {
+		icmpTargetList = strings.Split(icmpTargets, ",")
+		for i, target := range icmpTargetList {
+			icmpTargetList[i] = strings.TrimSpace(target)
+		}
+	}
+
+	// Process TCP targets
+	tcpTargetMap := make(map[string]int)
+	if tcpTargets != "" {
+		tcpTargetList := strings.Split(tcpTargets, ",")
+		for _, target := range tcpTargetList {
+			target = strings.TrimSpace(target)
+
+			// Parse host:port format
+			host, portStr, err := net.SplitHostPort(target)
+			if err != nil {
+				fmt.Printf("Warning: Invalid TCP target format '%s', skipping. Format should be host:port\n", target)
+				continue
+			}
+
+			// Convert port to integer
+			portNum, err := strconv.Atoi(portStr)
+			if err != nil || portNum < 1 || portNum > 65535 {
+				fmt.Printf("Warning: Invalid port number '%s' for target '%s', skipping. Port should be 1-65535\n", portStr, host)
+				continue
+			}
+
+			tcpTargetMap[host] = portNum
+		}
 	}
 
 	fmt.Printf("Starting AzNetMon on port %d\n", port)
-	fmt.Printf("Monitoring targets: %v\n", targetList)
+	if len(icmpTargetList) > 0 {
+		fmt.Printf("ICMP monitoring targets: %v\n", icmpTargetList)
+	}
+	if len(tcpTargetMap) > 0 {
+		fmt.Printf("TCP monitoring targets: %v\n", tcpTargetMap)
+	}
 
-	monitor := NewMonitor(targetList)
+	monitor := NewMonitor(icmpTargetList, tcpTargetMap)
 
 	// Start monitoring in background
 	go monitor.startMonitoring()
